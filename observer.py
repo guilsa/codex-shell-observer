@@ -343,6 +343,14 @@ def frequencies(calls: list[dict[str, Any]], ignored: set[str]) -> Counter[str]:
     return Counter(name for call in calls for name in call["utilities"] if name not in ignored)
 
 
+def spark_bar(count: int, maximum: int) -> str:
+    length = 12 * count / maximum
+    if length >= 1:
+        return "▓" * round(length)
+    parts = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "▓")
+    return parts[max(1, round(length * 8))]
+
+
 def exclusions_from(path: Path) -> set[str]:
     return {
         name
@@ -395,12 +403,14 @@ def main(argv: list[str] | None = None) -> int:
         for name, count in frequencies(ranked, ignored).most_common()
         if count >= args.min_count
     ]
+    direct_calls = sum(call["command"] is not None for call in result["calls"])
+    additional_commands = len(ranked) - len(result["calls"])
 
     if args.format == "coverage":
-        print(f"Files: {len(result['files'])}")
+        print(f"Files: {len(result['files'])}  Tool calls: {len(result['calls'])}  Shell commands: {direct_calls + additional_commands}")
+        print(f"Direct calls: {direct_calls}  Additional recorded commands: {additional_commands}")
         modes = result["history_modes"]
         print(f"History modes: legacy={modes['legacy']} paginated={modes['paginated']} other/unknown={modes['other'] + modes['unknown']}")
-        print(f"Direct shell calls parsed: {sum(call['command'] is not None for call in result['calls'])}")
         executions = result["executions"]
         print(f"Completed command items: {len(executions)}")
         print(f"  with command argv: {sum(execution['command'] is not None for execution in executions)}")
@@ -408,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  additional commands used in ranking: {len(ranked) - len(result['calls'])}")
         sources = Counter(execution["source_kind"] for execution in executions)
         print(f"  sources: agent={sources['agent']} user_shell={sources['user_shell']} startup={sources['unified_exec_startup']} interaction={sources['unified_exec_interaction']} other={sources['other']}")
+        print(f"Unmatched outputs: {len(result['unmatched_outputs'])}  Parse errors: {len(result['errors'])}")
         print(f"Code-mode exec cells (JavaScript not parsed): {code_mode_count(result['calls'])}")
     elif args.format == "json":
         result["frequencies"] = dict(visible_frequencies)
@@ -427,17 +438,20 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"{location}  {call['timestamp']}  {call['tool_name']}  {call['call_id']}  outputs={len(call['outputs'])}\n    {command}")
     else:
-        direct_shell_calls = sum(call["command"] is not None for call in result["calls"])
-        additional_commands = len(ranked) - len(result["calls"])
-        print(f"Files: {len(result['files'])}  Tool calls: {len(result['calls'])}  Shell commands: {direct_shell_calls + additional_commands}")
-        if additional_commands:
-            print(f"  Direct calls: {direct_shell_calls}  Additional recorded commands: {additional_commands}")
+        print(f"Files: {len(result['files'])}  Tool calls: {len(result['calls'])}  Shell commands: {direct_calls + additional_commands}")
+        print(f"Direct calls: {direct_calls}  Additional recorded commands: {additional_commands}")
+        print()
         print("Utility invocations (approximate):")
+        utility_width = max((len(name) for name, _ in visible_frequencies), default=7)
+        utility_width = max(utility_width, 7)
+        count_width = max((len(str(count)) for _, count in visible_frequencies), default=5)
+        count_width = max(count_width, 5)
+        print(f"{'Utility':<{utility_width}}  {'Count':>{count_width}}  {'Share':>6}")
+        print("─" * (utility_width + count_width + 10))
+        total = sum(count for _, count in visible_frequencies)
+        maximum = visible_frequencies[0][1] if visible_frequencies else 0
         for name, count in visible_frequencies:
-            print(f"{count:>6}  {name}")
-        print(f"Unmatched outputs: {len(result['unmatched_outputs'])}  Parse errors: {len(result['errors'])}")
-        if code_mode_count(result["calls"]):
-            print(f"Code-mode exec cells (JavaScript not parsed): {code_mode_count(result['calls'])}")
+            print(f"{name:<{utility_width}}  {count:>{count_width}}  {100 * count / total:>5.1f}%  {spark_bar(count, maximum)}")
         if args.utility:
             matches = sorted(
                 (call for call in ranked if args.utility in call["utilities"]),

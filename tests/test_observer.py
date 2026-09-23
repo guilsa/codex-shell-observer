@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from observer import code_mode_count, frequencies, main, ranked_records, scan, utilities_for_argv, utility_names
+from observer import code_mode_count, frequencies, main, ranked_records, scan, spark_bar, utilities_for_argv, utility_names
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "synthetic-rollout.jsonl"
@@ -85,19 +85,28 @@ class ObserverTests(unittest.TestCase):
             with mock.patch("sys.stdin", io.TextIOWrapper(io.BytesIO(path_list))):
                 with contextlib.redirect_stdout(StringIO()) as output:
                     self.assertEqual(main(["--sessions-from", "-", "--min-count", "2"]), 0)
-            self.assertIn("Files: 2  Tool calls: 10", output.getvalue())
-            self.assertIn("     2  find", output.getvalue())
+            self.assertIn("Files: 2  Tool calls: 10  Shell commands: 4\nDirect calls: 4  Additional recorded commands: 0\n\nUtility invocations (approximate):\nUtility  Count   Share\n", output.getvalue())
+            self.assertIn("find         2", output.getvalue())
 
     def test_min_count_filters_ranking_not_calls(self):
         with contextlib.redirect_stdout(StringIO()) as output:
             self.assertEqual(main([str(FIXTURE), "--min-count", "2"]), 0)
-        self.assertIn("Tool calls: 5", output.getvalue())
-        self.assertNotIn("     1  find", output.getvalue())
+        self.assertIn("\n\nUtility invocations (approximate):\nUtility  Count   Share\n", output.getvalue())
+        self.assertNotIn("find         1", output.getvalue())
         with contextlib.redirect_stdout(StringIO()) as output:
             self.assertEqual(main([str(FIXTURE), "--format", "json", "--min-count", "2"]), 0)
         exported = json.loads(output.getvalue())
         self.assertEqual(exported["frequencies"], {})
         self.assertEqual(len(exported["calls"]), 5)
+
+    def test_share_uses_visible_utilities_and_bars_scale_to_leader(self):
+        self.assertEqual(spark_bar(2165, 2165), "▓" * 12)
+        self.assertEqual(spark_bar(645, 2165), "▓" * 4)
+        self.assertEqual(spark_bar(94, 2165), "▌")
+        with contextlib.redirect_stdout(StringIO()) as output:
+            self.assertEqual(main([str(FIXTURE), "--ignore", "find"]), 0)
+        self.assertIn("grep         1   33.3%", output.getvalue())
+        self.assertNotIn("find         1", output.getvalue())
 
     def test_exclude_file_filters_ranking_not_records(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -105,9 +114,9 @@ class ObserverTests(unittest.TestCase):
             excluded.write_text("# personal ranking preferences\n\n grep \nawk\n")
             with contextlib.redirect_stdout(StringIO()) as output:
                 self.assertEqual(main([str(FIXTURE), "--exclude-file", str(excluded), "--ignore", "find"]), 0)
-            self.assertNotIn("     1  grep", output.getvalue())
-            self.assertNotIn("     1  awk", output.getvalue())
-            self.assertNotIn("     1  find", output.getvalue())
+            self.assertNotIn("grep         1", output.getvalue())
+            self.assertNotIn("awk          1", output.getvalue())
+            self.assertNotIn("find         1", output.getvalue())
             with contextlib.redirect_stdout(StringIO()) as output:
                 self.assertEqual(main([str(FIXTURE), "--format", "json", "--exclude-file", str(excluded)]), 0)
             exported = json.loads(output.getvalue())
@@ -119,8 +128,10 @@ class ObserverTests(unittest.TestCase):
             self.assertEqual(main([str(FIXTURE), "--format", "coverage"]), 0)
         report = output.getvalue()
         self.assertIn("History modes: legacy=1 paginated=0 other/unknown=0", report)
-        self.assertIn("Direct shell calls parsed: 2", report)
+        self.assertIn("Files: 1  Tool calls: 5  Shell commands: 2", report)
+        self.assertIn("Direct calls: 2  Additional recorded commands: 0", report)
         self.assertIn("Completed command items: 0", report)
+        self.assertIn("Unmatched outputs: 1  Parse errors: 0", report)
         self.assertIn("Code-mode exec cells (JavaScript not parsed): 1", report)
         self.assertNotIn("sed -n 1,5p file", report)
         self.assertNotIn(str(FIXTURE), report)

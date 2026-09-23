@@ -13,6 +13,10 @@ Point this read-only Python CLI at completed Codex sessions to rank shell
 utilities and trace each count back to its original call. It runs locally with
 only the standard library.
 
+Scanning my Codex sessions on my Mac, with a few utilities hidden:
+
+<img src="assets/shellscope-preview.png" alt="Shellscope utility ranking from a local run" width="550">
+
 ## How it works
 
 List the matching filenames:
@@ -47,13 +51,6 @@ find ~/.codex/sessions \
     --exclude-file excluded.txt
 ```
 
-Blank lines and `#` comments are allowed. Exclusions hide names from the
-ranking, not the underlying calls; `--ignore NAME` remains available for quick
-one-offs.
-
-When Codex saves completed command records, Shellscope includes them without
-double-counting matching direct calls.
-
 ## Notes
 
 Source references are pinned to [openai/codex@8d32abcd](https://github.com/openai/codex/commit/8d32abcd017d06511b46050cff9dbba8738fc2fa). The nearby [0.153.0-alpha.6 release](https://github.com/openai/codex/releases/tag/rust-v0.153.0-alpha.6) provides version context; it is not the exact source revision.
@@ -62,6 +59,7 @@ Source references are pinned to [openai/codex@8d32abcd](https://github.com/opena
 - Rollout format: [envelope](https://github.com/openai/codex/blob/8d32abcd017d06511b46050cff9dbba8738fc2fa/codex-rs/history/src/rollout_payload.rs) and [response item types](https://github.com/openai/codex/blob/8d32abcd017d06511b46050cff9dbba8738fc2fa/codex-rs/protocol/src/models.rs).
 - Saved commands: [command item](https://github.com/openai/codex/blob/8d32abcd017d06511b46050cff9dbba8738fc2fa/codex-rs/protocol/src/items.rs) and [rollout persistence policy](https://github.com/openai/codex/blob/8d32abcd017d06511b46050cff9dbba8738fc2fa/codex-rs/rollout/src/policy.rs).
 - Command mapping: [handler](https://github.com/openai/codex/blob/8d32abcd017d06511b46050cff9dbba8738fc2fa/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs) and [tests](https://github.com/openai/codex/blob/8d32abcd017d06511b46050cff9dbba8738fc2fa/codex-rs/core/src/tools/handlers/unified_exec_tests.rs).
+
 
 ## Future work
 
@@ -78,6 +76,24 @@ You can also try the included synthetic session without opening a private one:
 python3 observer.py tests/fixtures/synthetic-rollout.jsonl
 python3 observer.py tests/fixtures/synthetic-rollout.jsonl --format calls
 ```
+
+## FAQ
+
+**Does Shellscope help me do something I can't do elsewhere?**
+
+Not uniquely. Other projects analyze agent sessions too.
+
+**Have I checked other projects' code, tests, and privacy behavior?**
+
+Not yet. I've read enough to understand what they offer, not enough to
+recommend them. For context:
+
+- [TraceLab](https://tracelab.cs.washington.edu/exp/tool_calls/bash_command_breakdown/) ranks executables across Codex and Claude traces with deeper Bash parsing.
+- [codex-logger](https://github.com/kkrlstrm/codex-logger) puts local Codex tool calls into a queryable database.
+- [cxstat](https://github.com/takeshiD/cxstat) reports tool and token usage, with deeper shell-command analysis on its roadmap.
+
+Shellscope stays narrower: choose local sessions, get a quick ranking, and
+inspect the calls behind it.
 
 ## Caveats
 
