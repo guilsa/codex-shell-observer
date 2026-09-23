@@ -1,0 +1,12 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "turn_id": "turn-1",
+  "transcript_path": null,
+  "cwd": "/tmp/synthetic",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-test",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {"command": "find . -type f | grep '.conf$' | awk '{print $1}'"},
+  "tool_use_id": "call-shell-1"
+}

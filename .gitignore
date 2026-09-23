@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*
+
+# Keep locally exported session data and reports out of a future public repo.
+*.jsonl
+*.json
+/sessions/
+/data/
+/reports/
+/output/
+
+# These are invented, source-shaped test examples intended for the repo.
+!tests/fixtures/synthetic-rollout.jsonl
+!tests/fixtures/synthetic-pre-tool-use.json
