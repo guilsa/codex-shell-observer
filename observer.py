@@ -343,6 +343,14 @@ def frequencies(calls: list[dict[str, Any]], ignored: set[str]) -> Counter[str]:
     return Counter(name for call in calls for name in call["utilities"] if name not in ignored)
 
 
+def exclusions_from(path: Path) -> set[str]:
+    return {
+        name
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (name := line.strip()) and not name.startswith("#")
+    }
+
+
 def ranked_records(result: dict[str, Any]) -> list[dict[str, Any]]:
     """Use recorded executions absent from direct calls, but not user shell activity."""
     return result["calls"] + [
@@ -366,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sessions-from", metavar="FILE", help="read NUL-separated rollout paths from FILE; use - for stdin")
     parser.add_argument("--format", choices=("summary", "calls", "json", "coverage"), default="summary")
     parser.add_argument("--ignore", action="append", default=[], metavar="UTILITY", help="hide a utility from the frequency view; repeatable")
+    parser.add_argument("--exclude-file", type=Path, metavar="FILE", help="hide utilities listed one per line in FILE; blank lines and # comments allowed")
     parser.add_argument("--min-count", type=int, default=1, metavar="N", help="show only utilities invoked at least N times (default: 1)")
     parser.add_argument("--utility", metavar="UTILITY", help="show calls invoking this utility")
     args = parser.parse_args(argv)
@@ -375,6 +384,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--min-count must be at least 1")
     ignored = {name for value in args.ignore for name in value.split(",") if name}
     try:
+        if args.exclude_file is not None:
+            ignored.update(exclusions_from(args.exclude_file))
         result = scan(args.path) if args.path is not None else scan_paths(session_paths_from(args.sessions_from))
     except (OSError, UnicodeError) as error:
         parser.exit(2, f"observer: {error}\n")

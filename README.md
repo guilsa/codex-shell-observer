@@ -32,6 +32,25 @@ find ~/.codex/sessions \
 `-print0` separates filenames safely; the final `-` tells the observer to read
 that list from stdin.
 
+For a cleaner ranking, copy the example exclusion list and edit it:
+
+```sh
+cp excluded.example.txt excluded.txt
+```
+
+Then scan with the file:
+
+```sh
+find ~/.codex/sessions \
+  -type f -name 'rollout-*.jsonl' -print0 |
+  python3 observer.py --sessions-from - --min-count 40 \
+    --exclude-file excluded.txt
+```
+
+Blank lines and `#` comments are allowed. Exclusions hide names from the
+ranking, not the underlying calls; `--ignore NAME` remains available for quick
+one-offs.
+
 When Codex saves completed command records, Shellscope includes them without
 double-counting matching direct calls.
 

@@ -99,6 +99,21 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(exported["frequencies"], {})
         self.assertEqual(len(exported["calls"]), 5)
 
+    def test_exclude_file_filters_ranking_not_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            excluded = Path(directory) / "excluded.txt"
+            excluded.write_text("# personal ranking preferences\n\n grep \nawk\n")
+            with contextlib.redirect_stdout(StringIO()) as output:
+                self.assertEqual(main([str(FIXTURE), "--exclude-file", str(excluded), "--ignore", "find"]), 0)
+            self.assertNotIn("     1  grep", output.getvalue())
+            self.assertNotIn("     1  awk", output.getvalue())
+            self.assertNotIn("     1  find", output.getvalue())
+            with contextlib.redirect_stdout(StringIO()) as output:
+                self.assertEqual(main([str(FIXTURE), "--format", "json", "--exclude-file", str(excluded)]), 0)
+            exported = json.loads(output.getvalue())
+            self.assertEqual(exported["ignored_utilities"], ["awk", "grep"])
+            self.assertEqual(exported["calls"][0]["utilities"], ["find", "grep", "awk"])
+
     def test_coverage_is_aggregate_only(self):
         with contextlib.redirect_stdout(StringIO()) as output:
             self.assertEqual(main([str(FIXTURE), "--format", "coverage"]), 0)

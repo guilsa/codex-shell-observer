@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 .env
 .env.*
+/excluded.txt
 
 # Keep locally exported session data and reports out of a future public repo.
 *.jsonl
