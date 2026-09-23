@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from observer import code_mode_count, frequencies, main, scan, utility_names
+from observer import code_mode_count, frequencies, main, ranked_records, scan, utilities_for_argv, utility_names
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "synthetic-rollout.jsonl"
@@ -49,6 +49,7 @@ class ObserverTests(unittest.TestCase):
         )
         self.assertEqual(utility_names("for a in one two; do echo \"$a\"; done"), ["echo"])
         self.assertEqual(utility_names("printf '<<PY'; echo done"), ["printf", "echo"])
+        self.assertEqual(utilities_for_argv(["/bin/zsh", "-lc", "find . | rg x"]), ["find", "rg"])
 
     def test_ignore_is_presentation_only_and_directory_scan(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -69,7 +70,7 @@ class ObserverTests(unittest.TestCase):
         exported = json.loads(output.getvalue())
         self.assertEqual(exported["frequencies"].get("grep"), None)
         self.assertEqual(exported["calls"][0]["utilities"], ["find", "grep", "awk"])
-        self.assertEqual(exported["unclassified_code_mode_calls"], 1)
+        self.assertEqual(exported["code_mode_exec_cells"], 1)
         hook = json.loads(HOOK.read_text())
         call = scan(FIXTURE)["calls"][0]
         self.assertEqual(hook["tool_use_id"], call["call_id"])
@@ -97,6 +98,67 @@ class ObserverTests(unittest.TestCase):
         exported = json.loads(output.getvalue())
         self.assertEqual(exported["frequencies"], {})
         self.assertEqual(len(exported["calls"]), 5)
+
+    def test_coverage_is_aggregate_only(self):
+        with contextlib.redirect_stdout(StringIO()) as output:
+            self.assertEqual(main([str(FIXTURE), "--format", "coverage"]), 0)
+        report = output.getvalue()
+        self.assertIn("History modes: legacy=1 paginated=0 other/unknown=0", report)
+        self.assertIn("Direct shell calls parsed: 2", report)
+        self.assertIn("Completed command items: 0", report)
+        self.assertIn("Code-mode exec cells (JavaScript not parsed): 1", report)
+        self.assertNotIn("sed -n 1,5p file", report)
+        self.assertNotIn(str(FIXTURE), report)
+
+    def test_coverage_counts_paginated_command_items_without_printing_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout-paginated.jsonl"
+            records = [
+                {"type": "session_meta", "payload": {"id": "synthetic", "history_mode": "paginated"}},
+                {"type": "response_item", "payload": {"type": "function_call", "name": "exec_command",
+                    "arguments": json.dumps({"cmd": "printf same"}), "call_id": "direct"}},
+                {"type": "event_msg", "payload": {"type": "item_completed", "item": {
+                    "type": "CommandExecution", "id": "direct", "command": ["bash", "-lc", "printf same"],
+                }}},
+                {"type": "event_msg", "payload": {"type": "item_completed", "item": {
+                    "type": "CommandExecution", "id": "nested", "command": ["bash", "-lc", "rg synthetic-example"],
+                }}},
+                {"type": "event_msg", "payload": {"type": "item_completed", "item": {
+                    "type": "CommandExecution", "id": "user", "source": "user_shell",
+                    "command": ["bash", "-lc", "grep user-example"],
+                }}},
+            ]
+            path.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+            with contextlib.redirect_stdout(StringIO()) as output:
+                self.assertEqual(main([str(path), "--format", "coverage"]), 0)
+            self.assertIn("History modes: legacy=0 paginated=1 other/unknown=0", output.getvalue())
+            self.assertIn("Completed command items: 3", output.getvalue())
+            self.assertIn("with command argv: 3", output.getvalue())
+            self.assertIn("matching direct shell call IDs: 1", output.getvalue())
+            self.assertIn("additional commands used in ranking: 1", output.getvalue())
+            self.assertNotIn("synthetic-example", output.getvalue())
+            self.assertNotIn(str(path), output.getvalue())
+
+            result = scan(path)
+            self.assertEqual(len(result["executions"]), 3)
+            self.assertEqual(result["executions"][1]["raw"], json.loads(result["executions"][1]["raw_line"]))
+            self.assertTrue(result["executions"][0]["duplicate_direct"])
+            self.assertFalse(result["executions"][1]["duplicate_direct"])
+            self.assertEqual(frequencies(ranked_records(result), set())["printf"], 1)
+            self.assertEqual(frequencies(ranked_records(result), set())["rg"], 1)
+            self.assertEqual(frequencies(ranked_records(result), set())["grep"], 0)
+            self.assertEqual(frequencies(ranked_records(result), set())["bash"], 0)
+            with contextlib.redirect_stdout(StringIO()) as calls_output:
+                self.assertEqual(main([str(path), "--format", "calls"]), 0)
+            self.assertIn("command_execution  nested  status=unknown", calls_output.getvalue())
+            self.assertNotIn("command_execution  direct", calls_output.getvalue())
+            self.assertNotIn("command_execution  user", calls_output.getvalue())
+            with contextlib.redirect_stdout(StringIO()) as json_output:
+                self.assertEqual(main([str(path), "--format", "json"]), 0)
+            exported = json.loads(json_output.getvalue())
+            self.assertEqual(len(exported["executions"]), 3)
+            self.assertEqual(exported["frequencies"]["rg"], 1)
+            self.assertNotIn("grep", exported["frequencies"])
 
 
 if __name__ == "__main__":
